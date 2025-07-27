@@ -723,20 +723,42 @@ void plot3(const std::vector<Numeric> &x,
   }
   if (!fig) throw std::runtime_error("Call to figure() failed.");
 
-  PyObject *gca_kwargs = PyDict_New();
-  PyDict_SetItemString(gca_kwargs, "projection", PyString_FromString("3d"));
+  // Try modern approach: fig.add_subplot(111, projection='3d')
+  PyObject *axis = nullptr;
 
-  PyObject *gca = PyObject_GetAttrString(fig, "gca");
-  if (!gca) throw std::runtime_error("No gca");
-  Py_INCREF(gca);
-  PyObject *axis = PyObject_Call(
-      gca, detail::_interpreter::get().s_python_empty_tuple, gca_kwargs);
+  PyObject *add_subplot = PyObject_GetAttrString(fig, "add_subplot");
+  if (!add_subplot) throw std::runtime_error("No add_subplot");
 
-  if (!axis) throw std::runtime_error("No axis");
+  PyObject *subplot_args = PyTuple_New(1);
+  PyTuple_SetItem(subplot_args, 0, PyLong_FromLong(111));
+
+  PyObject *subplot_kwargs = PyDict_New();
+  PyDict_SetItemString(subplot_kwargs, "projection", PyString_FromString("3d"));
+
+  axis = PyObject_Call(add_subplot, subplot_args, subplot_kwargs);
+
+  // Clean up
+  Py_DECREF(add_subplot);
+  Py_DECREF(subplot_args);
+  Py_DECREF(subplot_kwargs);
+
+  if (!axis) {
+    // Fallback for older matplotlib: fig.gca(projection='3d')
+    PyObject *gca = PyObject_GetAttrString(fig, "gca");
+    if (!gca) throw std::runtime_error("No gca");
+    Py_INCREF(gca);
+
+    PyObject *gca_kwargs = PyDict_New();
+    PyDict_SetItemString(gca_kwargs, "projection", PyString_FromString("3d"));
+
+    axis = PyObject_Call(gca, detail::_interpreter::get().s_python_empty_tuple, gca_kwargs);
+
+    Py_DECREF(gca);
+    Py_DECREF(gca_kwargs);
+
+    if (!axis) throw std::runtime_error("No axis (both add_subplot and gca failed)");
+  }
   Py_INCREF(axis);
-
-  Py_DECREF(gca);
-  Py_DECREF(gca_kwargs);
 
   PyObject *plot3 = PyObject_GetAttrString(axis, "plot");
   if (!plot3) throw std::runtime_error("No 3D line plot");
